@@ -13,25 +13,41 @@ function pickColor(existingColors: string[]): string {
   return BOARD_COLORS.find(c => !used.has(c)) ?? BOARD_COLORS[Math.floor(Math.random() * BOARD_COLORS.length)];
 }
 
+function buildBasicTask(taskText: string, boardId: string): Task {
+  const now = new Date().toISOString();
+  return {
+    id: generateId(),
+    boardId,
+    text: taskText,
+    type: 'one-time',
+    priority: 'medium',
+    status: 'todo',
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 export function useClaudeCategorization() {
   const { state, dispatch } = useTasks();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function addTask(taskText: string): Promise<void> {
-    if (!taskText.trim()) return;
+    const trimmed = taskText.trim();
+    if (!trimmed) return;
+
     setIsLoading(true);
     setError(null);
 
     try {
-      const result = await categorizeTask(taskText.trim(), state.boards);
+      const result = await categorizeTask(trimmed, state.boards);
 
       let boardId = result.boardId;
 
       if (!boardId || !state.boards.find(b => b.id === boardId)) {
         const newBoard: Board = {
           id: generateId(),
-          name: result.newBoardName ?? 'כללי',
+          name: result.newBoardName ?? 'General',
           color: result.newBoardColor ?? pickColor(state.boards.map(b => b.color)),
           createdAt: new Date().toISOString(),
           isDefault: false,
@@ -49,7 +65,7 @@ export function useClaudeCategorization() {
       const task: Task = {
         id: generateId(),
         boardId,
-        text: taskText.trim(),
+        text: trimmed,
         type: result.taskType,
         priority: result.priority,
         status: 'todo',
@@ -64,7 +80,14 @@ export function useClaudeCategorization() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       console.error('AI error:', msg);
-      setError(`שגיאה: ${msg}`);
+
+      const fallbackBoardId = state.boards.find(board => board.id === 'personal')?.id ?? state.boards[0]?.id;
+      if (fallbackBoardId) {
+        dispatch({ type: 'ADD_TASK', payload: buildBasicTask(trimmed, fallbackBoardId) });
+        setError('AI categorization is unavailable, so the task was added without smart sorting.');
+      } else {
+        setError(`Error: ${msg}`);
+      }
     } finally {
       setIsLoading(false);
     }
